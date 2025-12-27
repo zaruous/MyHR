@@ -1,0 +1,36 @@
+<div class="max-w-7xl mx-auto">
+     <!-- 헤더 -->
+    <div class="flex flex-wrap items-center justify-between mb-6">
+        <h2 class="text-2xl font-bold text-slate-800">인사 평가</h2>
+        <div class="flex items-center gap-2">
+            <label for="eval-year-select" class="text-sm font-bold">평가 연도:</label>
+            <select id="eval-year-select" class="border rounded-md px-2 py-1 text-sm bg-white"></select>
+        </div>
+    </div>
+
+    <!-- 평가 현황 요약 -->
+    <div id="eval-summary" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <!-- 요약 정보가 여기에 동적으로 렌더링됩니다. -->
+    </div>
+
+    <!-- 평가 관리 테이블 -->
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <div class="max-h-[60vh] overflow-y-auto custom-scrollbar border">
+            <table class="w-full border-separate border-spacing-0">
+                <thead class="bg-slate-100 sticky top-0 z-10 font-bold text-xs text-slate-500 uppercase">
+                    <tr>
+                        <th class="py-3 px-4 border-b">사번</th>
+                        <th class="py-3 px-4 border-b">성명</th>
+                        <th class="py-3 px-4 border-b">부서</th>
+                        <th class="py-3 px-4 border-b">평가 등급</th>
+                        <th class="py-3 px-4 border-b">평가자</th>
+                        <th class="py-3 px-4 border-b">관리</th>
+                    </tr>
+                </thead>
+                <tbody id="evaluation-table-body" class="text-sm divide-y divide-slate-100">
+                    <!-- 평가 기록이 여기에 동적으로 렌더링됩니다. -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

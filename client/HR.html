@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>HRMS - 통합 인사정보 시스템</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .page-content { display: none; }
+        .page-content.active { display: flex; flex-direction: column; flex: 1; }
+        .detail-tab-content { display: none; }
+        .detail-tab-content.active { display: block; }
+        
+        /* 조직도 트리 활성화 스타일 */
+        .dept-item.active {
+            background-color: #eff6ff;
+            color: #2563eb;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden">
+    
+    <!-- 로그인 오버레이 -->
+    <div id="login-overlay" class="fixed inset-0 bg-slate-200 z-[100] flex items-center justify-center">
+        <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-sm">
+            <div class="flex items-center justify-center gap-2 mb-6">
+                <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </div>
+                <span class="font-bold text-2xl tracking-tight text-slate-800 italic">NEXUS <span class="text-blue-600">HRM</span></span>
+            </div>
+            <h2 class="text-xl font-bold text-center text-slate-700 mb-2">로그인</h2>
+            <p class="text-sm text-center text-slate-500 mb-6">통합 인사정보 시스템에 오신 것을 환영합니다.</p>
+            <div class="space-y-4">
+                <div>
+                    <label for="login-id" class="text-sm font-bold text-slate-600 block mb-1">사번</label>
+                    <input type="text" id="login-id" value="20220311" class="w-full border rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="login-password" class="text-sm font-bold text-slate-600 block mb-1">비밀번호</label>
+                    <input type="password" id="login-password" value="password" class="w-full border rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div class="pt-2">
+                     <button onclick="handleLogin()" class="w-full bg-blue-600 text-white py-2.5 rounded-md text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-100">로그인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="app-container" class="h-full flex-col overflow-hidden hidden">
+        <!-- 상단 글로벌 네비게이션 -->
+        <header class="h-14 bg-white border-b flex items-center justify-between px-6 z-20 shrink-0 shadow-sm">
+        <div class="flex items-center gap-8">
+            <div class="flex items-center gap-2 cursor-pointer" onclick="switchPage('hr')">
+                <div class="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </div>
+                <span class="font-bold text-lg tracking-tight text-slate-800 italic">NEXUS <span class="text-blue-600">HRM</span></span>
+            </div>
+            <nav class="hidden md:flex items-center gap-6 text-sm font-medium text-slate-500" id="top-nav">
+                <button onclick="switchPage('hr')" id="nav-hr" class="nav-item text-blue-600 border-b-2 border-blue-600 py-4 h-14 flex items-center">인사관리</button>
+                <button onclick="switchPage('payroll')" id="nav-payroll" class="nav-item hover:text-slate-800 py-4 h-14 flex items-center transition-colors">급여관리</button>
+                <button onclick="switchPage('attendance')" id="nav-attendance" class="nav-item hover:text-slate-800 py-4 h-14 flex items-center transition-colors">근태관리</button>
+                <button onclick="switchPage('eval')" id="nav-eval" class="nav-item hover:text-slate-800 py-4 h-14 flex items-center transition-colors">평가관리</button>
+                <button onclick="switchPage('system')" id="nav-system" class="nav-item hover:text-slate-800 py-4 h-14 flex items-center transition-colors">시스템설정</button>
+            </nav>
+        </div>
+        <div class="flex items-center gap-4 text-slate-500" id="user-info-display">
+            <!-- 로그인 시 동적으로 채워짐 -->
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        <!-- 사이드바: 조직도 -->
+        <aside class="w-72 bg-white border-r flex flex-col shrink-0 hidden lg:flex shadow-sm">
+            <div class="p-4 border-b bg-slate-50 flex justify-between items-center">
+                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Organizational Chart</h3>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto py-3 px-2 custom-scrollbar space-y-1" id="org-tree">
+                <!-- 회사 레벨 -->
+                <div onclick="filterByDept('전체', null)" class="dept-item active flex items-center gap-2 p-2 hover:bg-slate-50 rounded group cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-blue-600"><path d="M3 21h18"/><path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/></svg>
+                    <span class="text-sm font-bold">(주) 넥서스 솔루션</span>
+                </div>
+
+                <div id="dynamic-org-tree" class="ml-6 space-y-1 mt-1">
+                    <!-- 조직도가 동적으로 여기에 생성됩니다 -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- 메인 콘텐츠 영역 -->
+        <main id="main-content" class="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar">
+            <!-- 동적 페이지 콘텐츠가 여기에 로드됩니다. -->
+        </main>
+    </div>
+    </div><!-- app-container 닫는 태그 -->
+
+    <!-- 메시지 토스트 알림 -->
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full text-sm font-medium shadow-2xl opacity-0 transition-all duration-300 pointer-events-none z-50">
+        메시지입니다.
+    </div>
+
+    <!-- 부서 수정 모달 -->
+    <div id="edit-dept-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md animate-in fade-in zoom-in-95">
+            <h3 class="text-lg font-bold text-slate-700 border-b pb-3 mb-4">부서 정보 수정</h3>
+            <div class="space-y-4">
+                 <input type="hidden" id="edit-dept-id">
+                <div>
+                    <label for="edit-dept-name" class="text-sm font-bold text-slate-600 block mb-1">부서명</label>
+                    <input type="text" id="edit-dept-name" class="w-full border rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="edit-dept-parent" class="text-sm font-bold text-slate-600 block mb-1">상위 부서</label>
+                    <select id="edit-dept-parent" class="w-full border rounded-md px-3 py-2 text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500"></select>
+                </div>
+            </div>
+            <div class="flex justify-end gap-4 mt-6 pt-4 border-t">
+                <button onclick="hideEditDeptModal()" class="px-4 py-2 rounded-md text-sm font-semibold bg-slate-100 hover:bg-slate-200">취소</button>
+                <button onclick="updateDepartment()" class="px-4 py-2 rounded-md text-sm font-bold text-white bg-blue-600 hover:bg-blue-700">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 급여 정보 수정 모달 -->
+    <div id="salary-edit-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md animate-in fade-in zoom-in-95">
+            <h3 class="text-lg font-bold text-slate-700 border-b pb-3 mb-4">급여 정보 수정</h3>
+            <div class="space-y-4">
+                <input type="hidden" id="edit-salary-emp-id">
+                <div class="font-bold text-center text-lg" id="edit-salary-emp-name"></div>
+                <div>
+                    <label class="text-sm font-bold text-slate-600 block mb-1">연봉</label>
+                    <input type="number" id="edit-salary-base" class="w-full border rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-slate-600 block mb-1">은행명</label>
+                    <input type="text" id="edit-salary-bank" class="w-full border rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-slate-600 block mb-1">계좌번호</label>
+                    <input type="text" id="edit-salary-account" class="w-full border rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+            </div>
+            <div class="flex justify-end gap-4 mt-6 pt-4 border-t">
+                <button onclick="hideEditSalaryModal()" class="px-4 py-2 rounded-md text-sm font-semibold bg-slate-100 hover:bg-slate-200">취소</button>
+                <button onclick="updateSalary()" class="px-4 py-2 rounded-md text-sm font-bold text-white bg-blue-600 hover:bg-blue-700">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 평가 입력/수정 모달 -->
+    <div id="evaluation-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg animate-in fade-in zoom-in-95">
+            <h3 class="text-lg font-bold text-slate-700 border-b pb-3 mb-4">인사 평가</h3>
+            <div class="space-y-4">
+                <input type="hidden" id="eval-employee-id">
+                <input type="hidden" id="eval-year">
+                <div class="text-center">
+                    <div class="text-xl font-bold" id="eval-modal-emp-name"></div>
+                    <div class="text-sm text-slate-500" id="eval-modal-emp-info"></div>
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-slate-600 block mb-1">평가 등급</label>
+                    <div id="eval-rating-buttons" class="flex gap-2">
+                        <button data-rating="S" class="eval-rating-btn flex-1 p-3 border rounded-md font-bold text-2xl hover:bg-blue-100 focus:bg-blue-600 focus:text-white">S</button>
+                        <button data-rating="A" class="eval-rating-btn flex-1 p-3 border rounded-md font-bold text-2xl hover:bg-blue-100 focus:bg-blue-600 focus:text-white">A</button>
+                        <button data-rating="B" class="eval-rating-btn flex-1 p-3 border rounded-md font-bold text-2xl hover:bg-blue-100 focus:bg-blue-600 focus:text-white">B</button>
+                        <button data-rating="C" class="eval-rating-btn flex-1 p-3 border rounded-md font-bold text-2xl hover:bg-blue-100 focus:bg-blue-600 focus:text-white">C</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-slate-600 block mb-1">평가 의견</label>
+                    <textarea id="eval-feedback" rows="5" class="w-full border rounded-md p-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end gap-4 mt-6 pt-4 border-t">
+                <button onclick="hideEvaluationModal()" class="px-4 py-2 rounded-md text-sm font-semibold bg-slate-100 hover:bg-slate-200">취소</button>
+                <button onclick="saveEvaluation()" class="px-4 py-2 rounded-md text-sm font-bold text-white bg-blue-600 hover:bg-blue-700">평가 저장</button>
+            </div>
+        </div>
+    </div>
+    <script src="./js/main.js"></script>
+    <script src="./js/auth.js"></script>
+    <script src="./js/hr.js"></script>
+    <script src="./js/payroll.js"></script>
+    <script src="./js/attendance.js"></script>
+    <script src="./js/evaluation.js"></script>
+    <script src="./js/system.js"></script>
+</body>
+</html>

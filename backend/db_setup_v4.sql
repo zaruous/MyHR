@@ -1,0 +1,9 @@
+-- 직급 기준정보 관리용 테이블 추가
+CREATE TABLE IF NOT EXISTS job_positions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE COMMENT '직급명',
+    `level` INT NOT NULL UNIQUE COMMENT '직급 레벨 (정렬 및 순서용)',
+    description TEXT COMMENT '직급 설명',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) COMMENT '직급 기준 정보';
