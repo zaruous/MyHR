@@ -30,10 +30,19 @@ function renderAttendancePage() {
 }
 
 async function fetchAndRenderCalendar() {
+    const calendarTitle = document.getElementById('calendar-title');
+    const dailyDetailView = document.getElementById('daily-detail-view');
+
+    // DOM 요소가 아직 로드되지 않았을 경우를 대비한 가드 구문
+    if (!calendarTitle || !dailyDetailView) {
+        // console.warn('Attendance page elements not ready yet.');
+        return;
+    }
+
     const year = attendanceState.currentDate.getFullYear();
     const month = attendanceState.currentDate.getMonth() + 1;
-    document.getElementById('calendar-title').innerText = `${year}년 ${month}월`;
-    document.getElementById('daily-detail-view').classList.add('hidden');
+    calendarTitle.innerText = `${year}년 ${month}월`;
+    dailyDetailView.classList.add('hidden');
 
     try {
         const res = await secureFetch(`${API_BASE_URL}/api/attendance?year=${year}&month=${month}`);
@@ -48,67 +57,113 @@ async function fetchAndRenderCalendar() {
 
 function renderCalendar(year, month) {
     const grid = document.getElementById('calendar-grid');
-    grid.innerHTML = '';
     const firstDay = new Date(year, month - 1, 1).getDay();
     const daysInMonth = new Date(year, month, 0).getDate();
 
+    let cells = [];
+
+    // Add empty cells for days before the 1st
     for (let i = 0; i < firstDay; i++) {
-        grid.innerHTML += `<div class="bg-slate-50"></div>`;
+        cells.push('<div class="bg-slate-50"></div>');
     }
 
+    // Add cells for each day of the month
     for (let day = 1; day <= daysInMonth; day++) {
-        const recordsForDay = attendanceState.monthlyData.filter(r => new Date(r.record_date).getDate() === day);
-        const isWeekend = new Date(year, month - 1, day).getDay() % 6 === 0;
+        const currentDate = new Date(year, month - 1, day);
+        // Use string comparison to avoid timezone issues
+        const dateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+        const recordsForDay = attendanceState.monthlyData.filter(r => r.record_date.startsWith(dateString));
+        const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6;
         
         let summaryHtml = '';
-        if(recordsForDay.length > 0) {
+        if (recordsForDay.length > 0) {
             const onLeave = recordsForDay.filter(r => ['휴가', '병가', '오전반차', '오후반차'].includes(r.status)).length;
             const absent = recordsForDay.filter(r => r.status === '결근').length;
-            if(onLeave > 0) summaryHtml += `<div class="text-xs text-blue-600 mt-1">휴가/병가: ${onLeave}</div>`;
-            if(absent > 0) summaryHtml += `<div class="text-xs text-red-600">결근: ${absent}</div>`;
+            if (onLeave > 0) summaryHtml += `<div class="text-xs text-blue-600 mt-1">휴가/병가: ${onLeave}</div>`;
+            if (absent > 0) summaryHtml += `<div class="text-xs text-red-600">결근: ${absent}</div>`;
         }
 
-        grid.innerHTML += `
+        cells.push(`
             <div onclick="showDailyAttendance(${day})" class="h-28 p-2 border border-slate-100 ${isWeekend ? 'bg-slate-100' : 'bg-white hover:bg-blue-50 cursor-pointer'} flex flex-col overflow-hidden">
                 <div class="font-bold ${isWeekend ? 'text-slate-400' : 'text-slate-700'}">${day}</div>
                 ${summaryHtml}
             </div>
-        `;
+        `);
     }
+
+    grid.innerHTML = cells.join('');
 }
 
 function showDailyAttendance(day) {
     const isAdmin = authState.user && authState.user.role === 'admin';
     const date = new Date(attendanceState.currentDate.getFullYear(), attendanceState.currentDate.getMonth(), day);
-    const dateStr = date.toLocaleDateString();
+    const dateStrForTitle = date.toLocaleDateString();
+    
     document.getElementById('daily-detail-view').classList.remove('hidden');
-    document.getElementById('daily-detail-title').innerText = `${dateStr} 근태 기록`;
+    document.getElementById('daily-detail-title').innerText = `${dateStrForTitle} 근태 기록`;
     
     const tableBody = document.getElementById('daily-attendance-table');
-    const dailyRecords = attendanceState.monthlyData.filter(r => new Date(r.record_date).getDate() === day);
     
-    tableBody.innerHTML = '';
-     // 전체 직원을 기준으로 루프를 돌고, 해당 날짜의 기록이 있으면 사용, 없으면 '미기록' 처리
-    HRM.employees.forEach(emp => {
-        let record = dailyRecords.find(r => r.employee_id === emp.id);
-        let status = record ? record.status : '미기록';
-        
-        const statusSelectId = `status-${emp.id}-${day}`;
-        const statusOptionsHtml = statusOptions.map(opt => `<option value="${opt}" ${status === opt ? 'selected' : ''}>${opt}</option>`).join('');
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const dateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dailyRecords = attendanceState.monthlyData.filter(r => r.record_date.startsWith(dateString));
+    
+    tableBody.innerHTML = ''; // Clear previous records
 
-        tableBody.innerHTML += `
-             <tr>
-                <td class="p-3 font-mono text-slate-500">${emp.id}</td>
-                <td class="p-3 font-bold">${emp.name}</td>
-                <td class="p-3">${emp.dept_name}</td>
-                <td class="p-3">
-                    <select id="${statusSelectId}" onchange="updateAttendanceStatus('${emp.id}', '${date.toISOString().split('T')[0]}', this.value)" class="w-full border rounded-md p-1 text-sm bg-white" ${!isAdmin ? 'disabled' : ''}>
-                        <option value="미기록" ${status === '미기록' ? 'selected' : ''}>미기록</option>
-                        ${statusOptionsHtml}
-                    </select>
-                </td>
-            </tr>
-        `;
+    if (!HRM.employees || HRM.employees.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 4;
+        td.className = 'p-4 text-center text-slate-500';
+        td.textContent = '직원 정보가 없습니다.';
+        tr.appendChild(td);
+        tableBody.appendChild(tr);
+        return;
+    }
+
+    HRM.employees.forEach(emp => {
+        const record = dailyRecords.find(r => r.employee_id === emp.id);
+        const status = record ? record.status : '미기록';
+        
+        const tr = document.createElement('tr');
+
+        const idCell = document.createElement('td');
+        idCell.className = 'p-3 font-mono text-slate-500';
+        idCell.textContent = emp.id;
+
+        const nameCell = document.createElement('td');
+        nameCell.className = 'p-3 font-bold';
+        nameCell.textContent = emp.name;
+        
+        const deptCell = document.createElement('td');
+        deptCell.className = 'p-3';
+        deptCell.textContent = emp.dept_name;
+
+        const statusCell = document.createElement('td');
+        statusCell.className = 'p-3';
+
+        const select = document.createElement('select');
+        select.id = `status-${emp.id}-${day}`;
+        select.className = 'w-full border rounded-md p-1 text-sm bg-white';
+        if (!isAdmin) {
+            select.disabled = true;
+        }
+        select.onchange = () => updateAttendanceStatus(emp.id, date.toISOString().split('T')[0], select.value);
+
+        let optionsHtml = `<option value="미기록" ${status === '미기록' ? 'selected' : ''}>미기록</option>`;
+        optionsHtml += statusOptions.map(opt => `<option value="${opt}" ${status === opt ? 'selected' : ''}>${opt}</option>`).join('');
+        select.innerHTML = optionsHtml;
+
+        statusCell.appendChild(select);
+        
+        tr.appendChild(idCell);
+        tr.appendChild(nameCell);
+        tr.appendChild(deptCell);
+        tr.appendChild(statusCell);
+
+        tableBody.appendChild(tr);
     });
 }
 

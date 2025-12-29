@@ -11,38 +11,69 @@ function renderSettingOrgTree() {
     const parentSelect = document.getElementById('new-dept-parent');
     if (!container || !parentSelect) return;
 
+    // Clear previous content
     container.innerHTML = '';
-    parentSelect.innerHTML = '<option value="null">없음 (최상위 부서)</option>';
+    parentSelect.innerHTML = '';
 
-    const topLevelDepts = HRM.departments.filter(d => d.parent_id === null);
+    // Securely build parent select options
+    const defaultOption = document.createElement('option');
+    defaultOption.value = 'null';
+    defaultOption.textContent = '없음 (최상위 부서)';
+    parentSelect.appendChild(defaultOption);
 
     HRM.departments.forEach(dept => {
-        parentSelect.innerHTML += `<option value="${dept.id}">${dept.name}</option>`;
+        const option = document.createElement('option');
+        option.value = dept.id;
+        option.textContent = dept.name; // Securely set text content
+        parentSelect.appendChild(option);
     });
 
     const buildTree = (depts, level) => {
-        let html = '<div>';
+        const treeContainer = document.createElement('div');
         depts.forEach(dept => {
             const children = HRM.departments.filter(d => d.parent_id === dept.id);
-            html += `
-                <div class="p-2 rounded-md hover:bg-slate-50" style="margin-left: ${level * 20}px;">
-                    <div class="flex items-center justify-between">
-                        <span class="text-sm font-semibold">${dept.name}</span>
-                        <div class="flex items-center gap-2">
-                            <button onclick="showEditDeptForm(${dept.id}, '${dept.name}', ${dept.parent_id})" class="text-xs text-blue-600 hover:underline">수정</button>
-                            <button onclick="deleteDepartment(${dept.id})" class="text-xs text-red-600 hover:underline">삭제</button>
-                        </div>
-                    </div>
-                </div>
-            `;
+            
+            const deptElement = document.createElement('div');
+            deptElement.className = "p-2 rounded-md hover:bg-slate-50";
+            deptElement.style.marginLeft = `${level * 20}px`;
+
+            const contentWrapper = document.createElement('div');
+            contentWrapper.className = "flex items-center justify-between";
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = "text-sm font-semibold";
+            nameSpan.textContent = dept.name; // Secure
+
+            const controlsDiv = document.createElement('div');
+            controlsDiv.className = "flex items-center gap-2";
+
+            const editButton = document.createElement('button');
+            editButton.className = "text-xs text-blue-600 hover:underline";
+            editButton.textContent = "수정";
+            editButton.onclick = () => showEditDeptForm(dept.id, dept.name, dept.parent_id);
+
+            const deleteButton = document.createElement('button');
+            deleteButton.className = "text-xs text-red-600 hover:underline";
+            deleteButton.textContent = "삭제";
+            deleteButton.onclick = () => deleteDepartment(dept.id);
+            
+            controlsDiv.appendChild(editButton);
+            controlsDiv.appendChild(deleteButton);
+            
+            contentWrapper.appendChild(nameSpan);
+            contentWrapper.appendChild(controlsDiv);
+            deptElement.appendChild(contentWrapper);
+
             if (children.length > 0) {
-                html += buildTree(children, level + 1);
+                deptElement.appendChild(buildTree(children, level + 1));
             }
+            treeContainer.appendChild(deptElement);
         });
-        html += '</div>';
-        return html;
+        return treeContainer;
     };
-    container.innerHTML = buildTree(topLevelDepts, 0);
+
+    const topLevelDepts = HRM.departments.filter(d => d.parent_id === null);
+    container.appendChild(buildTree(topLevelDepts, 0));
 }
 
 async function createDepartment() {
@@ -75,12 +106,22 @@ function showEditDeptForm(id, currentName, currentParentId) {
     document.getElementById('edit-dept-name').value = currentName;
     
     const parentSelect = document.getElementById('edit-dept-parent');
-    parentSelect.innerHTML = '<option value="null">없음 (최상위 부서)</option>';
+    parentSelect.innerHTML = ''; // Clear previous options
+
+    const defaultOption = document.createElement('option');
+    defaultOption.value = 'null';
+    defaultOption.textContent = '없음 (최상위 부서)';
+    parentSelect.appendChild(defaultOption);
+
     HRM.departments.forEach(d => {
         if (d.id !== id && !isChildOf(d.id, id)) {
-            parentSelect.innerHTML += `<option value="${d.id}">${d.name}</option>`;
+            const option = document.createElement('option');
+            option.value = d.id;
+            option.textContent = d.name; // Securely set text content
+            parentSelect.appendChild(option);
         }
     });
+
     parentSelect.value = currentParentId === null ? 'null' : currentParentId;
     parentSelect.style.display = 'block';
     document.querySelector('label[for="edit-dept-parent"]').style.display = 'block';
@@ -89,7 +130,6 @@ function showEditDeptForm(id, currentName, currentParentId) {
     const saveButton = modal.querySelector('button.bg-blue-600');
     saveButton.innerText = '저장';
     saveButton.onclick = updateDepartment;
-
 
     modal.classList.remove('hidden');
 }
@@ -205,31 +245,79 @@ async function renderPositions() {
         if (!res || !res.ok) throw new Error('직급 정보 조회 실패');
         const positions = await res.json();
 
-        container.innerHTML = `
-            <table class="w-full text-sm text-left">
-                <thead class="bg-slate-50">
-                    <tr>
-                        <th class="p-2">레벨</th>
-                        <th class="p-2">직급명</th>
-                        <th class="p-2">설명</th>
-                        <th class="p-2">관리</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${positions.map(pos => `
-                        <tr class="border-b">
-                            <td class="p-2 w-16">${pos.level}</td>
-                            <td class="p-2 font-semibold">${pos.name}</td>
-                            <td class="p-2 text-slate-600">${pos.description || ''}</td>
-                            <td class="p-2 w-24">
-                                <button onclick='showEditPositionModal(${JSON.stringify(pos)})' class="text-xs text-blue-600 hover:underline">수정</button>
-                                <button onclick="deletePosition(${pos.id})" class="text-xs text-red-600 hover:underline ml-2">삭제</button>
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+        container.innerHTML = ''; // Clear container before rendering
+
+        const table = document.createElement('table');
+        table.className = 'w-full text-sm text-left';
+
+        const thead = document.createElement('thead');
+        thead.className = 'bg-slate-50';
+        // Table header is static and safe to set with innerHTML
+        thead.innerHTML = `
+            <tr>
+                <th class="p-2">레벨</th>
+                <th class="p-2">직급명</th>
+                <th class="p-2">설명</th>
+                <th class="p-2">관리</th>
+            </tr>
         `;
+
+        const tbody = document.createElement('tbody');
+
+        if (positions.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 4;
+            td.className = 'p-4 text-center text-slate-500';
+            td.textContent = '등록된 직급 정보가 없습니다.';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        } else {
+            positions.forEach(pos => {
+                const tr = document.createElement('tr');
+                tr.className = 'border-b';
+
+                const levelCell = document.createElement('td');
+                levelCell.className = 'p-2 w-16';
+                levelCell.textContent = pos.level;
+
+                const nameCell = document.createElement('td');
+                nameCell.className = 'p-2 font-semibold';
+                nameCell.textContent = pos.name;
+
+                const descCell = document.createElement('td');
+                descCell.className = 'p-2 text-slate-600';
+                descCell.textContent = pos.description || '';
+
+                const actionsCell = document.createElement('td');
+                actionsCell.className = 'p-2 w-24';
+
+                const editButton = document.createElement('button');
+                editButton.className = 'text-xs text-blue-600 hover:underline';
+                editButton.textContent = '수정';
+                editButton.onclick = () => showEditPositionModal(pos);
+
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'text-xs text-red-600 hover:underline ml-2';
+                deleteButton.textContent = '삭제';
+                deleteButton.onclick = () => deletePosition(pos.id);
+
+                actionsCell.appendChild(editButton);
+                actionsCell.appendChild(deleteButton);
+
+                tr.appendChild(levelCell);
+                tr.appendChild(nameCell);
+                tr.appendChild(descCell);
+                tr.appendChild(actionsCell);
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        container.appendChild(table);
+
     } catch (error) {
         showToast(error.message, true);
     }

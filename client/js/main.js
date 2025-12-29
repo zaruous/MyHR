@@ -28,8 +28,7 @@ async function secureFetch(url, options = {}) {
 
 
     if (res.status === 401 || res.status === 403) {
-        alert(` ${res.message }  ${res.code}`  ) ;
-
+        showToast('인증이 만료되었거나 유효하지 않습니다. 다시 로그인해주세요.', true);
         logout(); // 토큰이 유효하지 않으면 로그아웃 처리
         return;
     }
@@ -39,23 +38,29 @@ async function secureFetch(url, options = {}) {
 // 데이터 새로고침
 async function refreshData() {
     try {
-        const [empRes, deptRes] = await Promise.all([
+        const [empRes, deptRes, posRes] = await Promise.all([
             secureFetch(`${API_BASE_URL}/api/employees`),
-            secureFetch(`${API_BASE_URL}/api/departments`)
+            secureFetch(`${API_BASE_URL}/api/departments`),
+            secureFetch(`${API_BASE_URL}/api/positions`) // 직급 정보 추가 로드
         ]);
 
-        if (!empRes || !deptRes) return;
+        if (!empRes || !deptRes || !posRes) return;
 
-        if (!empRes.ok || !deptRes.ok) {
+        if (!empRes.ok || !deptRes.ok || !posRes.ok) {
             throw new Error('데이터를 불러오는 데 실패했습니다.');
         }
 
         HRM.employees = await empRes.json();
         HRM.departments = await deptRes.json();
+        HRM.jobPositions = await posRes.json(); // 직급 정보 저장
         
         HRM.employees.forEach(emp => {
             const dept = HRM.departments.find(d => d.id === emp.dept_id);
             emp.dept_name = dept ? dept.name : '미배정';
+            // 직급 정보도 매핑
+            const jobPos = HRM.jobPositions.find(jp => jp.id === emp.job_position_id);
+            emp.job_position_name = jobPos ? jobPos.name : '미지정';
+            emp.job_position_level = jobPos ? jobPos.level : 999;
         });
         
         renderOrgTree();
@@ -91,13 +96,34 @@ async function switchPage(pageId) {
 
     const mainContent = document.getElementById('main-content');
     try {
-        const response = await fetch(`pages/${pageId}.html`);
+        // Add cache-busting query parameter to prevent loading incomplete cached versions
+        const response = await fetch(`pages/${pageId}.html?t=${new Date().getTime()}`);
         if (!response.ok) {
             mainContent.innerHTML = `<div class="p-8 text-center text-red-500">오류: 페이지를 불러올 수 없습니다.</div>`;
             return;
         }
-        mainContent.innerHTML = await response.text();
+        const text = await response.text();
+
+        // Use DOMParser to avoid innerHTML race conditions and script injection issues from live-server
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, 'text/html');
+        
+        // Find the specific content container from the parsed document
+        const newPageContent = doc.querySelector('.max-w-7xl.mx-auto');
+
+        mainContent.innerHTML = ''; // Clear old content
+        
+        if (newPageContent) {
+            mainContent.appendChild(newPageContent);
+        } else {
+            console.error(`Could not find a content container in pages/${pageId}.html`);
+            mainContent.innerHTML = `<div class="p-8 text-center text-red-500">오류: 페이지 형식이 잘못되었습니다.</div>`;
+            return;
+        }
+
+        // Now that the DOM is synchronously and safely updated, we can render.
         renderCurrentPage();
+
     } catch (error) {
         console.error('Page loading error:', error);
         mainContent.innerHTML = `<div class="p-8 text-center text-red-500">오류: 페이지 로딩 중 문제가 발생했습니다.</div>`;
@@ -122,6 +148,9 @@ function renderCurrentPage() {
         case 'system':
             renderSettingOrgTree();
             renderPayrollSettings();
+            break;
+        case 'career': // 경력 관리 페이지 추가
+            renderCareerPage();
             break;
     }
 }

@@ -1,0 +1,19 @@
+{
+  "name": "hr-client",
+  "version": "1.0.0",
+  "description": "HR management system client-side application",
+  "main": "index.js",
+  "scripts": {
+    "start": "http-server .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.8"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

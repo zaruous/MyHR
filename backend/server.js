@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -9,7 +10,7 @@ const adminOnly = require('./adminOnly');
 const { ERROR_CODE } = require('./constant');
 const app = express();
 const port = 3000;
-const JWT_SECRET = 'your_jwt_secret_key'; // 실제 프로덕션에서는 환경 변수로 관리해야 합니다.
+const JWT_SECRET = process.env.JWT_SECRET || 'your_default_secret_key'; // 실제 프로덕션에서는 환경 변수로 관리해야 합니다.
 
 
 app.use(cors());
@@ -27,18 +28,24 @@ app.post('/api/auth/login', async (req, res) => {
         const [rows] = await db.query('SELECT * FROM employees WHERE id = ?', [employee_id]);
         const user = rows[0];
 
-
-        if(user == undefined)
-        {
-            return res.status(401).json({ message: '사용자 정보가 존재하지 않습니다.' });
-        }
-        if(!user.password)
-        {
-            res.status(401).json( { message : '비밀번호 변경', code: ERROR_CODE.CHG_PWD });
-            return;
-        }
-        if (!user || !user.password) {
+        if (!user) {
             return res.status(401).json({ message: '사번 또는 비밀번호가 잘못되었습니다.' });
+        }
+
+        // 비밀번호가 없는 경우(최초 로그인) CHG_PWD 코드 전송
+        if (!user.password) {
+            // 임시 토큰 발급 (비밀번호 변경용)
+            const tempToken = jwt.sign(
+                { id: user.id, name: user.name, role: 'TEMP' }, // 제한된 역할
+                JWT_SECRET,
+                { expiresIn: '10m' } // 짧은 만료 시간
+            );
+            return res.status(401).json({ 
+                message: '비밀번호 변경 필요', 
+                code: ERROR_CODE.CHG_PWD,
+                tempToken: tempToken,
+                user: { id: user.id, name: user.name }
+            });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
@@ -65,6 +72,29 @@ app.post('/api/auth/login', async (req, res) => {
     } catch (error) {
         console.error('로그인 중 오류:', error);
         res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+//--- 비밀번호 변경 라우트 (보호됨) ---
+app.post('/api/change-password', authMiddleware, async (req, res) => {
+    const { newPassword } = req.body;
+    const userId = req.user.id;
+
+    if (!newPassword || newPassword.length < 4) {
+        return res.status(400).json({ message: '비밀번호는 4자 이상이어야 합니다.' });
+    }
+
+    try {
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        await db.query('UPDATE employees SET password = ? WHERE id = ?', [hashedPassword, userId]);
+
+        res.status(200).json({ message: '비밀번호가 성공적으로 변경되었습니다.' });
+
+    } catch (error) {
+        console.error('비밀번호 변경 중 오류:', error);
+        res.status(500).json({ message: '비밀번호 변경 중 서버 오류가 발생했습니다.' });
     }
 });
 
@@ -146,12 +176,17 @@ apiRouter.delete('/departments/:id', adminOnly, async (req, res) => {
 
 apiRouter.get('/employees', async (req, res) => {
     try {
-        const { search, status } = req.query;
+        const { search, status, dept_id, job_position_id } = req.query;
 
         let query = `
-            SELECT e.*, d.name as dept_name 
+            SELECT 
+                e.*, 
+                d.name as dept_name,
+                jp.name as job_position_name,
+                jp.level as job_position_level
             FROM employees e
             LEFT JOIN departments d ON e.dept_id = d.id
+            LEFT JOIN job_positions jp ON e.job_position_id = jp.id
         `;
         const params = [];
 
@@ -165,10 +200,19 @@ apiRouter.get('/employees', async (req, res) => {
             whereClauses.push(`e.status = ?`);
             params.push(status);
         }
+        if (dept_id) {
+            whereClauses.push(`e.dept_id = ?`);
+            params.push(dept_id);
+        }
+        if (job_position_id) {
+            whereClauses.push(`e.job_position_id = ?`);
+            params.push(job_position_id);
+        }
 
         if (whereClauses.length > 0) {
             query += ' WHERE ' + whereClauses.join(' AND ');
         }
+        query += ' ORDER BY e.id';
 
         const [rows] = await db.query(query, params);
         res.json(rows);
@@ -179,17 +223,27 @@ apiRouter.get('/employees', async (req, res) => {
 });
 
 apiRouter.post('/employees', adminOnly, async (req, res) => {
-    const { id, name, email, pos, status, dept_id } = req.body;
+    const { id, name, email, job_position_id, status, dept_id } = req.body;
 
-    if (!id || !name || !email || !dept_id) {
-        return res.status(400).json({ message: '필수 필드(사번, 이름, 이메일, 부서)를 모두 입력해주세요.' });
+    if (!id || !name || !email || !dept_id || !job_position_id) {
+        return res.status(400).json({ message: '필수 필드(사번, 이름, 이메일, 부서, 직급)를 모두 입력해주세요.' });
     }
 
     try {
-        const sql = 'INSERT INTO employees (id, name, email, pos, status, dept_id) VALUES (?, ?, ?, ?, ?, ?)';
-        await db.query(sql, [id, name, email, pos, status, dept_id]);
+        const sql = 'INSERT INTO employees (id, name, email, job_position_id, status, dept_id) VALUES (?, ?, ?, ?, ?, ?)';
+        await db.query(sql, [id, name, email, job_position_id, status, dept_id]);
         
-        const [rows] = await db.query('SELECT e.*, d.name as dept_name FROM employees e LEFT JOIN departments d ON e.dept_id = d.id WHERE e.id = ?', [id]);
+        const [rows] = await db.query(`
+            SELECT 
+                e.*, 
+                d.name as dept_name,
+                jp.name as job_position_name,
+                jp.level as job_position_level
+            FROM employees e 
+            LEFT JOIN departments d ON e.dept_id = d.id 
+            LEFT JOIN job_positions jp ON e.job_position_id = jp.id 
+            WHERE e.id = ?
+        `, [id]);
         res.status(201).json(rows[0]);
 
     } catch (error) {
@@ -203,21 +257,31 @@ apiRouter.post('/employees', adminOnly, async (req, res) => {
 
 apiRouter.put('/employees/:id', adminOnly, async (req, res) => {
     const { id } = req.params;
-    const { name, email, pos, status, dept_id } = req.body;
+    const { name, email, job_position_id, status, dept_id } = req.body;
 
-    if (!name || !email || !dept_id) {
-        return res.status(400).json({ message: '필수 필드(이름, 이메일, 부서)를 모두 입력해주세요.' });
+    if (!name || !email || !dept_id || !job_position_id) {
+        return res.status(400).json({ message: '필수 필드(이름, 이메일, 부서, 직급)를 모두 입력해주세요.' });
     }
 
     try {
-        const sql = 'UPDATE employees SET name = ?, email = ?, pos = ?, status = ?, dept_id = ? WHERE id = ?';
-        const [result] = await db.query(sql, [name, email, pos, status, dept_id, id]);
+        const sql = 'UPDATE employees SET name = ?, email = ?, job_position_id = ?, status = ?, dept_id = ? WHERE id = ?';
+        const [result] = await db.query(sql, [name, email, job_position_id, status, dept_id, id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: '해당 사원을 찾을 수 없습니다.' });
         }
         
-        const [rows] = await db.query('SELECT e.*, d.name as dept_name FROM employees e LEFT JOIN departments d ON e.dept_id = d.id WHERE e.id = ?', [id]);
+        const [rows] = await db.query(`
+            SELECT 
+                e.*, 
+                d.name as dept_name,
+                jp.name as job_position_name,
+                jp.level as job_position_level
+            FROM employees e 
+            LEFT JOIN departments d ON e.dept_id = d.id 
+            LEFT JOIN job_positions jp ON e.job_position_id = jp.id 
+            WHERE e.id = ?
+        `, [id]);
         res.json(rows[0]);
 
     } catch (error) {
@@ -340,10 +404,18 @@ apiRouter.post('/attendance', adminOnly, async (req, res) => {
 apiRouter.get('/salaries', async (req, res) => {
     try {
         const query = `
-            SELECT e.id, e.name, d.name as dept_name, e.pos, s.base_salary, s.bank_name, s.account_number
+            SELECT 
+                e.id, 
+                e.name, 
+                d.name as dept_name, 
+                jp.name as job_position_name,
+                s.base_salary, 
+                s.bank_name, 
+                s.account_number
             FROM employees e
             LEFT JOIN salaries s ON e.id = s.employee_id
             LEFT JOIN departments d ON e.dept_id = d.id
+            LEFT JOIN job_positions jp ON e.job_position_id = jp.id
             ORDER BY e.id
         `;
         const [rows] = await db.query(query);
@@ -552,8 +624,8 @@ apiRouter.put('/positions/:id', adminOnly, async (req, res) => {
 apiRouter.delete('/positions/:id', adminOnly, async (req, res) => {
     const { id } = req.params;
     try {
-        // 해당 직급을 사용하는 직원이 있는지 확인
-        const [employees] = await db.query('SELECT id FROM employees WHERE pos = (SELECT name FROM job_positions WHERE id = ?)', [id]);
+        // 해당 직급을 사용하는 직원이 있는지 확인 (job_position_id를 참조)
+        const [employees] = await db.query('SELECT id FROM employees WHERE job_position_id = ?', [id]);
         if (employees.length > 0) {
             return res.status(400).json({ message: '해당 직급에 소속된 직원이 있어 삭제할 수 없습니다.' });
         }
@@ -569,6 +641,208 @@ apiRouter.delete('/positions/:id', adminOnly, async (req, res) => {
         res.status(500).json({ message: '서버 오류가 발생했습니다.' });
     }
 });
+
+
+/*--- 경력 관리 API ---*/
+apiRouter.get('/employees/:employee_id/career', async (req, res) => {
+    const { employee_id } = req.params;
+    try {
+        const [certifications] = await db.query('SELECT * FROM employee_certifications WHERE employee_id = ?', [employee_id]);
+        const [training] = await db.query('SELECT * FROM employee_training WHERE employee_id = ?', [employee_id]);
+        const [awards] = await db.query('SELECT * FROM employee_awards WHERE employee_id = ?', [employee_id]);
+        const [projects] = await db.query('SELECT * FROM employee_projects WHERE employee_id = ?', [employee_id]);
+
+        res.json({ certifications, training, awards, projects });
+    } catch (error) {
+        console.error('직원 경력 정보 조회 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+// 자격증 (Certifications)
+apiRouter.post('/certifications', adminOnly, async (req, res) => {
+    const { employee_id, name, issuer, issue_date, expiry_date, cert_number } = req.body;
+    if (!employee_id || !name || !issue_date) {
+        return res.status(400).json({ message: '직원 ID, 자격증명, 취득일은 필수입니다.' });
+    }
+    try {
+        const sql = 'INSERT INTO employee_certifications (employee_id, name, issuer, issue_date, expiry_date, cert_number) VALUES (?, ?, ?, ?, ?, ?)';
+        const [result] = await db.query(sql, [employee_id, name, issuer || null, issue_date, expiry_date || null, cert_number || null]);
+        res.status(201).json({ id: result.insertId, ...req.body });
+    } catch (error) {
+        console.error('자격증 추가 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+apiRouter.put('/certifications/:id', adminOnly, async (req, res) => {
+    const { id } = req.params;
+    const { name, issuer, issue_date, expiry_date, cert_number } = req.body;
+    if (!name || !issue_date) {
+        return res.status(400).json({ message: '자격증명, 취득일은 필수입니다.' });
+    }
+    try {
+        const sql = 'UPDATE employee_certifications SET name = ?, issuer = ?, issue_date = ?, expiry_date = ?, cert_number = ? WHERE id = ?';
+        await db.query(sql, [name, issuer || null, issue_date, expiry_date || null, cert_number || null, id]);
+        res.status(200).json({ message: '자격증 정보가 수정되었습니다.' });
+    } catch (error) {
+        console.error('자격증 수정 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+apiRouter.delete('/certifications/:id', adminOnly, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [result] = await db.query('DELETE FROM employee_certifications WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: '자격증을 찾을 수 없습니다.' });
+        }
+        res.status(200).json({ message: '자격증이 삭제되었습니다.' });
+    } catch (error) {
+        console.error('자격증 삭제 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+// 교육 이수 (Training)
+apiRouter.post('/training', adminOnly, async (req, res) => {
+    const { employee_id, course_name, institution, start_date, end_date, description } = req.body;
+    if (!employee_id || !course_name || !start_date) {
+        return res.status(400).json({ message: '직원 ID, 과정명, 시작일은 필수입니다.' });
+    }
+    try {
+        const sql = 'INSERT INTO employee_training (employee_id, course_name, institution, start_date, end_date, description) VALUES (?, ?, ?, ?, ?, ?)';
+        const [result] = await db.query(sql, [employee_id, course_name, institution || null, start_date, end_date || null, description || null]);
+        res.status(201).json({ id: result.insertId, ...req.body });
+    } catch (error) {
+        console.error('교육 이수 추가 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+apiRouter.put('/training/:id', adminOnly, async (req, res) => {
+    const { id } = req.params;
+    const { course_name, institution, start_date, end_date, description } = req.body;
+    if (!course_name || !start_date) {
+        return res.status(400).json({ message: '과정명, 시작일은 필수입니다.' });
+    }
+    try {
+        const sql = 'UPDATE employee_training SET course_name = ?, institution = ?, start_date = ?, end_date = ?, description = ? WHERE id = ?';
+        await db.query(sql, [course_name, institution || null, start_date, end_date || null, description || null, id]);
+        res.status(200).json({ message: '교육 이수 정보가 수정되었습니다.' });
+    } catch (error) {
+        console.error('교육 이수 수정 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+apiRouter.delete('/training/:id', adminOnly, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [result] = await db.query('DELETE FROM employee_training WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: '교육 이수 정보를 찾을 수 없습니다.' });
+        }
+        res.status(200).json({ message: '교육 이수가 삭제되었습니다.' });
+    } catch (error) {
+        console.error('교육 이수 삭제 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+// 수상 내역 (Awards)
+apiRouter.post('/awards', adminOnly, async (req, res) => {
+    const { employee_id, award_name, issuer, award_date, description } = req.body;
+    if (!employee_id || !award_name || !award_date) {
+        return res.status(400).json({ message: '직원 ID, 수상명, 수상일은 필수입니다.' });
+    }
+    try {
+        const sql = 'INSERT INTO employee_awards (employee_id, award_name, issuer, award_date, description) VALUES (?, ?, ?, ?, ?)';
+        const [result] = await db.query(sql, [employee_id, award_name, issuer || null, award_date, description || null]);
+        res.status(201).json({ id: result.insertId, ...req.body });
+    } catch (error) {
+        console.error('수상 내역 추가 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+apiRouter.put('/awards/:id', adminOnly, async (req, res) => {
+    const { id } = req.params;
+    const { award_name, issuer, award_date, description } = req.body;
+    if (!award_name || !award_date) {
+        return res.status(400).json({ message: '수상명, 수상일은 필수입니다.' });
+    }
+    try {
+        const sql = 'UPDATE employee_awards SET award_name = ?, issuer = ?, award_date = ?, description = ? WHERE id = ?';
+        await db.query(sql, [award_name, issuer || null, award_date, description || null, id]);
+        res.status(200).json({ message: '수상 내역 정보가 수정되었습니다.' });
+    } catch (error) {
+        console.error('수상 내역 수정 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+apiRouter.delete('/awards/:id', adminOnly, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [result] = await db.query('DELETE FROM employee_awards WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: '수상 내역을 찾을 수 없습니다.' });
+        }
+        res.status(200).json({ message: '수상 내역이 삭제되었습니다.' });
+    } catch (error) {
+        console.error('수상 내역 삭제 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+// 프로젝트 이력 (Projects)
+apiRouter.post('/projects', adminOnly, async (req, res) => {
+    const { employee_id, project_name, start_date, end_date, role, description } = req.body;
+    if (!employee_id || !project_name || !start_date) {
+        return res.status(400).json({ message: '직원 ID, 프로젝트명, 시작일은 필수입니다.' });
+    }
+    try {
+        const sql = 'INSERT INTO employee_projects (employee_id, project_name, start_date, end_date, role, description) VALUES (?, ?, ?, ?, ?, ?)';
+        const [result] = await db.query(sql, [employee_id, project_name, start_date, end_date || null, role || null, description || null]);
+        res.status(201).json({ id: result.insertId, ...req.body });
+    } catch (error) {
+        console.error('프로젝트 이력 추가 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+apiRouter.put('/projects/:id', adminOnly, async (req, res) => {
+    const { id } = req.params;
+    const { project_name, start_date, end_date, role, description } = req.body;
+    if (!project_name || !start_date) {
+        return res.status(400).json({ message: '프로젝트명, 시작일은 필수입니다.' });
+    }
+    try {
+        const sql = 'UPDATE employee_projects SET project_name = ?, start_date = ?, end_date = ?, role = ?, description = ? WHERE id = ?';
+        await db.query(sql, [project_name, start_date, end_date || null, role || null, description || null, id]);
+        res.status(200).json({ message: '프로젝트 이력 정보가 수정되었습니다.' });
+    } catch (error) {
+        console.error('프로젝트 이력 수정 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+apiRouter.delete('/projects/:id', adminOnly, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [result] = await db.query('DELETE FROM employee_projects WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: '프로젝트 이력을 찾을 수 없습니다.' });
+        }
+        res.status(200).json({ message: '프로젝트 이력이 삭제되었습니다.' });
+    } catch (error) {
+        console.error('프로젝트 이력 삭제 중 오류:', error);
+        res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    }
+});
+
 
 // 기본 라우트 및 보호된 API 라우터 연결
 app.get('/', (req, res) => {

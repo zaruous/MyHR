@@ -5,25 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
     <title>HRMS - 통합 인사정보 시스템</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        .page-content { display: none; }
-        .page-content.active { display: flex; flex-direction: column; flex: 1; }
-        .detail-tab-content { display: none; }
-        .detail-tab-content.active { display: block; }
-        
-        /* 조직도 트리 활성화 스타일 */
-        .dept-item.active {
-            background-color: #eff6ff;
-            color: #2563eb;
-            font-weight: 700;
-        }
-    </style>
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden">
     
@@ -69,6 +51,7 @@
                 <button onclick="switchPage('payroll')" id="nav-payroll" class="nav-item hover:text-slate-800 py-4 h-14 flex items-center transition-colors">급여관리</button>
                 <button onclick="switchPage('attendance')" id="nav-attendance" class="nav-item hover:text-slate-800 py-4 h-14 flex items-center transition-colors">근태관리</button>
                 <button onclick="switchPage('eval')" id="nav-eval" class="nav-item hover:text-slate-800 py-4 h-14 flex items-center transition-colors">평가관리</button>
+                <button onclick="switchPage('career')" id="nav-career" class="nav-item hover:text-slate-800 py-4 h-14 flex items-center transition-colors">경력관리</button>
                 <button onclick="switchPage('system')" id="nav-system" class="nav-item hover:text-slate-800 py-4 h-14 flex items-center transition-colors">시스템설정</button>
             </nav>
         </div>
@@ -98,7 +81,8 @@
         </aside>
 
         <!-- 메인 콘텐츠 영역 -->
-        <main id="main-content" class="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar">
+
+        <main id="main-content" class="w-full h-full flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar">
             <!-- 동적 페이지 콘텐츠가 여기에 로드됩니다. -->
         </main>
     </div>
@@ -189,12 +173,13 @@
             </div>
         </div>
     </div>
-    <script src="./js/main.js"></script>
     <script src="./js/auth.js"></script>
+    <script src="./js/main.js"></script>
     <script src="./js/hr.js"></script>
     <script src="./js/payroll.js"></script>
     <script src="./js/attendance.js"></script>
     <script src="./js/evaluation.js"></script>
     <script src="./js/system.js"></script>
+    <script src="./js/career.js"></script>
 </body>
 </html>

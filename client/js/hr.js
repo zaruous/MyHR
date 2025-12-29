@@ -1,4 +1,23 @@
 // 부서 필터링 및 테이블 렌더링 함수
+// 직급 데이터 로드를 위한 전역 변수
+HRM.jobPositions = [];
+
+// 직급 데이터 로드 함수
+async function fetchJobPositions() {
+    try {
+        const res = await secureFetch(`${API_BASE_URL}/api/positions`);
+        if (!res) return;
+        if (!res.ok) throw new Error('직급 정보를 불러오는 데 실패했습니다.');
+        HRM.jobPositions = await res.json();
+    } catch (error) {
+        showToast(error.message, true);
+    }
+}
+
+// 이 함수는 main.js의 refreshData에서 호출되어야 함을 가정
+// 실제 호출은 main.js 수정 시 추가될 예정
+// await fetchJobPositions();
+
 function filterByDept(deptName, deptId = null) {
     // 검색 조건 표시 업데이트
     if (document.getElementById('dept-display')) {
@@ -54,12 +73,20 @@ async function searchEmployees() {
 }
 
 // 신규 사원 등록 폼 표시
-function showNewEmployeeForm() {
+async function showNewEmployeeForm() {
     const detailView = document.getElementById('detail-view');
     
     // 부서 선택 <select> 옵션을 동적으로 생성
     const deptOptions = HRM.departments
         .map(d => `<option value="${d.id}">${d.name}</option>`)
+        .join('');
+
+    // 직급 선택 <select> 옵션을 동적으로 생성
+    if (HRM.jobPositions.length === 0) {
+        await fetchJobPositions(); // 직급 데이터가 없으면 로드
+    }
+    const jobPositionOptions = HRM.jobPositions
+        .map(jp => `<option value="${jp.id}">${jp.name}</option>`)
         .join('');
 
     detailView.innerHTML = `
@@ -69,7 +96,10 @@ function showNewEmployeeForm() {
                 <div><label class="block text-xs font-bold text-slate-500 mb-1">사번</label><input type="text" id="new-emp-id" class="w-full border rounded px-2 py-1.5"></div>
                 <div><label class="block text-xs font-bold text-slate-500 mb-1">성명</label><input type="text" id="new-emp-name" class="w-full border rounded px-2 py-1.5"></div>
                 <div><label class="block text-xs font-bold text-slate-500 mb-1">이메일</label><input type="email" id="new-emp-email" class="w-full border rounded px-2 py-1.5"></div>
-                <div><label class="block text-xs font-bold text-slate-500 mb-1">직위</label><input type="text" id="new-emp-pos" class="w-full border rounded px-2 py-1.5"></div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">직급</label>
+                    <select id="new-emp-job-position" class="w-full border rounded px-2 py-1.5 bg-white">${jobPositionOptions}</select>
+                </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-500 mb-1">소속 부서</label>
                     <select id="new-emp-dept" class="w-full border rounded px-2 py-1.5 bg-white">${deptOptions}</select>
@@ -94,13 +124,13 @@ async function createNewEmployee() {
         id: document.getElementById('new-emp-id').value,
         name: document.getElementById('new-emp-name').value,
         email: document.getElementById('new-emp-email').value,
-        pos: document.getElementById('new-emp-pos').value,
+        job_position_id: parseInt(document.getElementById('new-emp-job-position').value),
         dept_id: parseInt(document.getElementById('new-emp-dept').value),
         status: document.getElementById('new-emp-status').value,
     };
 
-    if (!newEmployee.id || !newEmployee.name || !newEmployee.email || !newEmployee.dept_id) {
-        showToast('사번, 성명, 이메일, 부서는 필수 입력 항목입니다.', true);
+    if (!newEmployee.id || !newEmployee.name || !newEmployee.email || !newEmployee.dept_id || !newEmployee.job_position_id) {
+        showToast('사번, 성명, 이메일, 부서, 직급은 필수 입력 항목입니다.', true);
         return;
     }
 
@@ -146,7 +176,7 @@ function renderTable(data) {
             <td class="py-3 px-4 border-r font-mono text-slate-500">${emp.id}</td>
             <td class="py-3 px-4 border-r font-bold text-slate-800">${emp.name}</td>
             <td class="py-3 px-4 border-r text-slate-600">${emp.dept_name}</td>
-            <td class="py-3 px-4 border-r text-slate-600">${emp.pos}</td>
+            <td class="py-3 px-4 border-r text-slate-600">${emp.job_position_name}</td>
             <td class="py-3 px-4">
                 <span class="px-2 py-1 ${emp.status === '재직' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'} rounded-full text-[10px] font-bold">
                     ${emp.status}
@@ -180,7 +210,7 @@ function showDetail(emp, rowEl) {
                 </div>
                 <div class="text-center">
                     <h3 class="text-xl font-bold">${emp.name}</h3>
-                    <p class="text-sm text-slate-500">${emp.dept_name} / ${emp.pos}</p>
+                    <p class="text-sm text-slate-500">${emp.dept_name} / ${emp.job_position_name}</p>
                 </div>
             </div>
             <div class="space-y-4">
@@ -196,12 +226,19 @@ function showDetail(emp, rowEl) {
     `;
 }
 
-function showEditEmployeeForm(emp) {
+async function showEditEmployeeForm(emp) {
     const detailView = document.getElementById('detail-view');
     const isAdmin = authState.user && authState.user.role === 'admin';
     
     const deptOptions = HRM.departments.map(d => 
         `<option value="${d.id}" ${d.id === emp.dept_id ? 'selected' : ''}>${d.name}</option>`
+    ).join('');
+
+    if (HRM.jobPositions.length === 0) {
+        await fetchJobPositions(); // 직급 데이터가 없으면 로드
+    }
+    const jobPositionOptions = HRM.jobPositions.map(jp =>
+        `<option value="${jp.id}" ${jp.id === emp.job_position_id ? 'selected' : ''}>${jp.name}</option>`
     ).join('');
 
     const statusOptions = ['재직', '휴직', '퇴직'].map(s => 
@@ -225,7 +262,10 @@ function showEditEmployeeForm(emp) {
                 <div><label class="block text-xs font-bold text-slate-500 mb-1">사번</label><input type="text" id="edit-emp-id" class="w-full border rounded px-2 py-1.5 bg-slate-100" value="${emp.id}" readonly></div>
                 <div><label class="block text-xs font-bold text-slate-500 mb-1">성명</label><input type="text" id="edit-emp-name" class="w-full border rounded px-2 py-1.5" value="${emp.name}" ${!isAdmin ? 'readonly' : ''}></div>
                 <div><label class="block text-xs font-bold text-slate-500 mb-1">이메일</label><input type="email" id="edit-emp-email" class="w-full border rounded px-2 py-1.5" value="${emp.email}" ${!isAdmin ? 'readonly' : ''}></div>
-                <div><label class="block text-xs font-bold text-slate-500 mb-1">직위</label><input type="text" id="edit-emp-pos" class="w-full border rounded px-2 py-1.5" value="${emp.pos}" ${!isAdmin ? 'readonly' : ''}></div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">직급</label>
+                    <select id="edit-emp-job-position" class="w-full border rounded px-2 py-1.5 bg-white" ${!isAdmin ? 'disabled' : ''}>${jobPositionOptions}</select>
+                </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-500 mb-1">소속 부서</label>
                     <select id="edit-emp-dept" class="w-full border rounded px-2 py-1.5 bg-white" ${!isAdmin ? 'disabled' : ''}>${deptOptions}</select>
@@ -244,13 +284,13 @@ async function updateEmployee(id) {
     const updatedData = {
         name: document.getElementById('edit-emp-name').value,
         email: document.getElementById('edit-emp-email').value,
-        pos: document.getElementById('edit-emp-pos').value,
+        job_position_id: parseInt(document.getElementById('edit-emp-job-position').value),
         dept_id: parseInt(document.getElementById('edit-emp-dept').value),
         status: document.getElementById('edit-emp-status').value,
     };
 
-     if (!updatedData.name || !updatedData.email || !updatedData.dept_id) {
-        showToast('이름, 이메일, 부서는 필수 입력 항목입니다.', true);
+     if (!updatedData.name || !updatedData.email || !updatedData.dept_id || !updatedData.job_position_id) {
+        showToast('이름, 이메일, 부서, 직급은 필수 입력 항목입니다.', true);
         return;
     }
 

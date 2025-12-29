@@ -1,6 +1,7 @@
+require('dotenv').config();
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = 'your_jwt_secret_key'; // 실제 프로덕션에서는 환경 변수로 관리해야 합니다.
+const JWT_SECRET = process.env.JWT_SECRET || 'your_default_secret_key'; // 실제 프로덕션에서는 환경 변수로 관리해야 합니다.
 
 function authMiddleware(req, res, next) {
     const authHeader = req.headers.authorization;

@@ -39,15 +39,19 @@ async function setupDatabase() {
         connection = await mysql.createConnection(dbConfig);
         console.log('MariaDB에 성공적으로 연결되었습니다.');
 
-        // 2. 'hr' 데이터베이스 생성
+        // 2. 'hr' 데이터베이스 삭제 (초기화를 위해)
+        await connection.query(`DROP DATABASE IF EXISTS ${DB_NAME}`);
+        console.log(`'${DB_NAME}' 데이터베이스를 삭제했습니다.`);
+
+        // 3. 'hr' 데이터베이스 생성
         await connection.query(`CREATE DATABASE IF NOT EXISTS ${DB_NAME}`);
         console.log(`'${DB_NAME}' 데이터베이스가 생성되었거나 이미 존재합니다.`);
         
-        // 3. 'hr' 데이터베이스로 전환
+        // 4. 'hr' 데이터베이스로 전환
         await connection.changeUser({ database: DB_NAME });
         console.log(`'${DB_NAME}' 데이터베이스를 사용합니다.`);
 
-        // 4. 'departments' 테이블 생성
+        // 5. 'departments' 테이블 생성
         await connection.query(`
             CREATE TABLE IF NOT EXISTS departments (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -58,39 +62,37 @@ async function setupDatabase() {
         `);
         console.log("'departments' 테이블이 생성되었거나 이미 존재합니다.");
 
-        // 5. 'employees' 테이블 스키마 확인 및 수정/생성
-        const [empColumns] = await connection.query(`
-            SELECT * FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'role'
-        `, [DB_NAME]);
-
-        if (empColumns.length === 0) {
-             console.log("'employees' 테이블에 'role'과 'password' 컬럼을 추가합니다.");
-             await connection.query(`
-                ALTER TABLE employees
-                ADD COLUMN role ENUM('admin', 'user') DEFAULT 'user' NOT NULL,
-                ADD COLUMN password VARCHAR(255)
-            `);
-        } else {
-            console.log("'employees' 테이블에 이미 'role'과 'password' 컬럼이 존재합니다.");
-        }
+        // 5. 'job_positions' 테이블 생성
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS job_positions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL UNIQUE,
+                level INT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        `);
+        console.log("'job_positions' 테이블이 생성되었거나 이미 존재합니다.");
         
+        // 6. 'employees' 테이블을 새 스키마에 맞게 생성
         await connection.query(`
             CREATE TABLE IF NOT EXISTS employees (
                 id VARCHAR(20) PRIMARY KEY,
                 name VARCHAR(50) NOT NULL,
                 email VARCHAR(100) UNIQUE NOT NULL,
-                pos VARCHAR(50),
+                job_position_id INT,
                 status ENUM('재직', '휴직', '퇴직') DEFAULT '재직',
                 role ENUM('admin', 'user') DEFAULT 'user' NOT NULL,
                 password VARCHAR(255),
                 dept_id INT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                FOREIGN KEY (dept_id) REFERENCES departments(id) ON DELETE SET NULL
+                FOREIGN KEY (dept_id) REFERENCES departments(id) ON DELETE SET NULL,
+                FOREIGN KEY (job_position_id) REFERENCES job_positions(id) ON DELETE SET NULL
             )
         `);
-        console.log("'employees' 테이블이 생성되었거나 이미 존재합니다.");
+        console.log("'employees' 테이블이 새 스키마에 맞게 생성되었거나 이미 존재합니다.");
 
         // 7. 'salaries' 테이블 생성
         await connection.query(`
@@ -157,8 +159,83 @@ async function setupDatabase() {
         `);
         console.log("'evaluations' 테이블이 생성되었거나 이미 존재합니다.");
 
+        // 11. 'system_settings' 테이블 생성
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS system_settings (
+                setting_key VARCHAR(255) PRIMARY KEY,
+                setting_value VARCHAR(255) NOT NULL,
+                description TEXT
+            )
+        `);
+        console.log("'system_settings' 테이블이 생성되었거나 이미 존재합니다.");
 
-        // 11. 데이터 삽입 (중복 방지)
+        // 12. Career-related tables
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS employee_certifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                employee_id VARCHAR(20) NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                issuer VARCHAR(255),
+                issue_date DATE,
+                expiry_date DATE,
+                cert_number VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+            )
+        `);
+        console.log("'employee_certifications' 테이블이 생성되었거나 이미 존재합니다.");
+
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS employee_training (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                employee_id VARCHAR(20) NOT NULL,
+                course_name VARCHAR(255) NOT NULL,
+                institution VARCHAR(255),
+                start_date DATE,
+                end_date DATE,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+            )
+        `);
+        console.log("'employee_training' 테이블이 생성되었거나 이미 존재합니다.");
+
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS employee_awards (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                employee_id VARCHAR(20) NOT NULL,
+                award_name VARCHAR(255) NOT NULL,
+                issuer VARCHAR(255),
+                award_date DATE,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+            )
+        `);
+        console.log("'employee_awards' 테이블이 생성되었거나 이미 존재합니다.");
+
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS employee_projects (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                employee_id VARCHAR(20) NOT NULL,
+                project_name VARCHAR(255) NOT NULL,
+                start_date DATE,
+                end_date DATE,
+                role VARCHAR(100),
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+            )
+        `);
+        console.log("'employee_projects' 테이블이 생성되었거나 이미 존재합니다.");
+
+
+
+        // 12. 데이터 삽입 (중복 방지)
         const [deptRows] = await connection.query('SELECT COUNT(*) as count FROM departments');
         if (deptRows[0].count === 0) {
             await connection.query(
@@ -170,11 +247,41 @@ async function setupDatabase() {
             console.log("'departments' 테이블에 이미 데이터가 존재하여 삽입을 건너뜁니다.");
         }
 
+        const jobPositions = [
+            { id: 1, name: '사원', level: 10 },
+            { id: 2, name: '대리', level: 20 },
+            { id: 3, name: '과장', level: 30 },
+            { id: 4, name: '팀장', level: 40 },
+            { id: 5, name: '선임연구원', level: 50 },
+            { id: 6, name: '책임연구원', level: 60 },
+            { id: 7, name: '수석연구원', level: 70 },
+        ];
+        const [posRows] = await connection.query('SELECT COUNT(*) as count FROM job_positions');
+        if (posRows[0].count === 0) {
+            await connection.query(
+                'INSERT INTO job_positions (id, name, level) VALUES ?',
+                [jobPositions.map(p => [p.id, p.name, p.level])]
+            );
+            console.log("'job_positions' 테이블에 초기 데이터를 삽입했습니다.");
+        } else {
+            console.log("'job_positions' 테이블에 이미 데이터가 존재하여 삽입을 건너뜁니다.");
+        }
+        
+        const posNameToId = jobPositions.reduce((acc, pos) => {
+            acc[pos.name] = pos.id;
+            return acc;
+        }, {});
+        const employeesWithJobId = employees.map(e => ({
+            ...e, 
+            job_position_id: posNameToId[e.pos],
+            role: e.id === '20220311' ? 'admin' : 'user' // 박지민 팀장을 admin으로 지정
+        }));
+
         const [empRows] = await connection.query('SELECT COUNT(*) as count FROM employees');
         if (empRows[0].count === 0) {
             await connection.query(
-                'INSERT INTO employees (id, name, dept_id, pos, status, email) VALUES ?',
-                [employees.map(e => [e.id, e.name, e.dept_id, e.pos, e.status, e.email])]
+                'INSERT INTO employees (id, name, dept_id, job_position_id, status, email, role) VALUES ?',
+                [employeesWithJobId.map(e => [e.id, e.name, e.dept_id, e.job_position_id, e.status, e.email, e.role])]
             );
             console.log("'employees' 테이블에 초기 데이터를 삽입했습니다.");
         } else {
@@ -213,7 +320,6 @@ async function setupDatabase() {
 
             for (let day = 1; day <= daysInMonth; day++) {
                 const currentDay = new Date(year, month, day);
-                // 주말(토:6, 일:0)은 건너뛰기
                 if (currentDay.getDay() === 0 || currentDay.getDay() === 6) {
                     continue;
                 }
@@ -221,7 +327,6 @@ async function setupDatabase() {
                 for (const empId of allEmployees) {
                     const dateStr = `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
                     let status = '출근';
-                    // 데모용 랜덤 데이터 생성
                     const rand = Math.random();
                     if (rand < 0.05) status = '결근';
                     else if (rand < 0.1) status = '휴가';
@@ -258,6 +363,21 @@ async function setupDatabase() {
             console.log(`'evaluations' 테이블에 ${evaluationData.length}개의 초기 데이터를 삽입했습니다.`);
         } else {
             console.log("'evaluations' 테이블에 이미 데이터가 존재하여 삽입을 건너뜁니다.");
+        }
+
+        const [settingsRows] = await connection.query('SELECT COUNT(*) as count FROM system_settings');
+        if (settingsRows[0].count === 0) {
+            const settingsData = [
+                ['payroll_bonus', '100000', '전직원 고정 보너스 금액'],
+                ['payroll_deductions', '50000', '전직원 고정 공제액']
+            ];
+             await connection.query(
+                'INSERT INTO system_settings (setting_key, setting_value, description) VALUES ?',
+                [settingsData]
+            );
+            console.log("'system_settings' 테이블에 초기 데이터를 삽입했습니다.");
+        } else {
+            console.log("'system_settings' 테이블에 이미 데이터가 존재하여 삽입을 건너뜁니다.");
         }
 
 

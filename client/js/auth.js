@@ -11,14 +11,17 @@ async function handleLogin() {
         });
         const data = await res.json();
         if (!res.ok) {
-            if(data && data.code == 1000)
-            {
-                document.location.href = "pages/changePassword.html";
+            if (data && data.code === 1000) { // CHG_PWD
+                showToast('최초 로그인입니다. 비밀번호를 변경해주세요.');
+                localStorage.setItem('hrm_token', data.tempToken); // 임시 토큰 저장
+                localStorage.setItem('passwordChangeRequired', 'true');
+                localStorage.setItem('hrm_user_info_for_pwd_change', JSON.stringify(data.user)); // 비밀번호 변경 페이지용 사용자 정보 저장
+                setTimeout(() => {
+                    window.location.href = 'pages/changePassword.html';
+                }, 1000);
                 return;
-            }
-            else
-            {
-                throw new Error(data.message);
+            } else {
+                throw new Error(data.message || '로그인에 실패했습니다.');
             }
         }
 
